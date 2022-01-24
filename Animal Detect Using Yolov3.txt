@@ -1,0 +1,117 @@
+import cv2
+import numpy as np
+import glob
+import random
+import time
+import datetime
+from time import sleep
+import mysql.connector
+from datetime import datetime
+
+mydb = mysql.connector.connect(
+        host="103.145.226.115",
+        user="simanta1_root",
+        password="simanta1_root",
+        database="simanta1_monitoring_hutan"
+        )
+
+        mycursor = mydb.cursor()
+
+
+        # Load Yolo
+        net = cv2.dnn.readNet("D:\Kuliah\Semester_10\TA_II\PYTHON\DATA\Yolov3_training_last.weights",
+        "D:\Kuliah\Semester_10\TA_II\PYTHON\DATA\Yolov3_testing.cfg")
+
+        # Name custom object
+        classes = ["anjing hutan", "kucing hutan", "tupai"]
+        layer_names = net.getLayerNames()
+        output_layers = [layer_names[i[0] - 1] for i in net.getUnconnectedOutLayers()]
+        colors = np.random.uniform(0, 255, size=(len(classes),3))
+        clas = len(classes)
+        cap = cv2.VideoCapture('Kucing.mp4')
+        #cap.set(cv2.CAP_PROP_BUFFERSIZE, 2)
+        #cap.set(cv2.CAP_PROP_FPS,300000)
+
+        font = cv2.FONT_HERSHEY_PLAIN
+        starting_time = time.time()
+        frame_id = 0
+
+        exist = [0, 0, 0]
+        while True:
+        _, frame = cap.read()
+        frame_id += 1
+
+        height, width, channels = frame.shape
+
+        # Detecting objects
+        blob = cv2.dnn.blobFromImage(frame, 0.00392, (320, 320), (0, 0, 0), True, crop=False)
+
+        net.setInput(blob)
+        outs = net.forward(output_layers)
+
+        # Showing informations on the screen
+        class_ids = []
+
+        confidences = []
+        boxes = []
+        for out in outs:
+        for detection in out:
+        scores = detection[5:]
+        class_id = np.argmax(scores)
+        confidence = scores[class_id]
+        if confidence > 0.3:
+        # Object detected
+        print(class_id)
+        print(confidence)
+        deteksi = float(confidence)
+        center_x = int(detection[0] * width)
+        center_y = int(detection[1] * height)
+        w = int(detection[2] * width)
+        h = int(detection[3] * height)
+
+        # Rectangle coordinates
+        x = int(center_x - w / 2)
+        y = int(center_y - h / 2)
+
+        boxes.append([x, y, w, h])
+        confidences.append(float(confidence))
+        class_ids.append(class_id)
+
+        indexes = cv2.dnn.NMSBoxes(boxes, confidences, 0.5, 0.4)
+        #print(indexes)
+        font = cv2.FONT_HERSHEY_PLAIN
+
+        format_time = "%Y-%m-%d %H:%M:%S"
+        exist_temp = [0, 0, 0]
+        for i in range(len(boxes)):
+        if i in indexes:
+        x, y, w, h = boxes[i]
+        label = str(classes[class_ids[i]])
+        color = colors[2]
+        if exist[class_ids[i]] == 0 and exist_temp[class_ids[i]] == 0:
+        print(label)
+        query_insert = "INSERT INTO t_data_camera (id_camera, nama_hewan, periode_waktu) VALUES (%s, %s, %s)"
+        now = datetime.now()
+        current_time = now.strftime(format_time)
+        val = ("CP1", label, current_time)
+        print(query_insert)
+        print(val)
+        mycursor.execute(query_insert, val)
+        mydb.commit()
+        exist[class_ids[i]] = 1
+        exist_temp[class_ids[i]] = 1
+        cv2.rectangle(frame, (x, y), (x + w, y + h), color, 2)
+        cv2.putText(frame, label, (x, y + 30), font, 3, color, 2)
+        exist_temp[class_ids[i]] = 1
+        exist = exist_temp.copy()
+
+        elapsed_time = time.time() - starting_time
+        fps = frame_id / elapsed_time
+        cv2.putText(frame, "FPS: " + str(fps), (10, 30), font, 3, (0, 0, 0), 1)
+        cv2.imshow("Image", frame)
+
+        key = cv2.waitKey(1)
+
+        cap.release()
+        cv2.destroyAllWindows()
+
